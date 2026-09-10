@@ -1,0 +1,4 @@
+date,symbol,side,quantity,price,broker,charges
+2024-05-02,TATAMOTORS,BUY,50,940.00,zerodha,18.5
+2024-11-18,TATAMOTORS,SELL,50,1180.00,zerodha,22.0
+2025-01-07,INFY,BUY,20,1890.00,upstox,15.0

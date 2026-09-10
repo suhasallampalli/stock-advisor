@@ -1,0 +1,55 @@
+# Copy to config.yaml and tune.  Values here are safe defaults, not advice.
+
+llm:
+  # Enable the Claude-written daily narrative. Rule signals still run if false.
+  enabled: true
+  # Let Claude pull recent headlines for held/watchlist names via web search.
+  use_web_search: true
+
+market:
+  exchange_suffix: ".NS"          # ".NS" = NSE, ".BO" = BSE (yfinance convention)
+  lookback_days: 400              # history pulled for indicator calculation
+  # NSE trading holidays for the current year (YYYY-MM-DD). Sessions are
+  # skipped on these dates. Update yearly from the NSE holiday calendar.
+  holidays:
+    - 2026-01-26
+    - 2026-03-06
+    - 2026-03-25
+    - 2026-04-03
+    - 2026-04-14
+    - 2026-05-01
+    - 2026-08-15
+    - 2026-10-02
+    - 2026-11-09
+    - 2026-12-25
+
+indicators:
+  sma_fast: 20
+  sma_slow: 50
+  sma_trend: 200
+  rsi_period: 14
+  rsi_oversold: 32
+  rsi_overbought: 70
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
+  atr_period: 14
+  breakout_window: 20            # days for support/resistance & 20d high/low
+
+signals:
+  # Suggest trimming any single holding worth more than this share of the book.
+  concentration_trim_pct: 22
+  # Book partial profit when unrealised gain exceeds this and momentum fades.
+  profit_take_pct: 30
+  # Chandelier-exit multiple of ATR below the recent high -> STOPLOSS_HIT.
+  atr_stop_mult: 3.0
+  # Hard stop: flag if price is this far below your average cost.
+  hard_stop_pct: 12
+  # Overnight gap (%) on a holding that triggers an "attention" flag.
+  gap_alert_pct: 4
+
+watchlist_file: data/watchlist.txt
+
+report:
+  # Max symbols shown per section in the email.
+  max_rows: 40

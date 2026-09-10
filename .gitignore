@@ -1,0 +1,15 @@
+.env
+config.yaml
+data/watchlist.txt
+data/trades.csv
+data/*_token.json
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+__pycache__/
+*.pyc
+.venv/
+/tmp/
+*.egg-info/
+.pytest_cache/

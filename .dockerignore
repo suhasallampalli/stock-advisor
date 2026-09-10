@@ -1,0 +1,15 @@
+.git
+.gitignore
+.venv
+.pytest_cache
+__pycache__
+*.pyc
+.env
+config.yaml
+data/*.db
+data/*.db-*
+data/*_token.json
+data/watchlist.txt
+data/trades.csv
+tests
+README.md

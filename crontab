@@ -1,0 +1,15 @@
+# NSE session times are 09:15–15:30 IST. Container TZ is Asia/Kolkata.
+# Weekend days are excluded here; NSE holidays are skipped in code (config.yaml).
+#
+# Multi-user mode: `--all-users` emails every active API user their own brief
+# (using their own stored broker credentials). Drop the flag to instead run a
+# single shared brief from .env / config.yaml.
+
+SHELL=/bin/sh
+PYTHONPATH=/app/src
+
+# Pre-open brief — ~30 min before the market opens
+45 8 * * 1-5 cd /app && python -m advisor --session premarket --all-users >> /proc/1/fd/1 2>&1
+
+# Post-close brief — ~15 min after the market closes
+45 15 * * 1-5 cd /app && python -m advisor --session postmarket --all-users >> /proc/1/fd/1 2>&1

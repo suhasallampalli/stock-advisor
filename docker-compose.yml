@@ -1,0 +1,31 @@
+services:
+  # --- REST API: auth (password + Google OIDC), broker credentials, briefs ---
+  api:
+    build: .
+    image: stock-advisor:latest
+    container_name: stock-advisor-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: Asia/Kolkata
+    command: >
+      uvicorn advisor.api.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data          # sqlite db + any file-mode broker tokens
+
+  # --- scheduler: emails each active user their brief twice per trading day ---
+  scheduler:
+    build: .
+    image: stock-advisor:latest
+    container_name: stock-advisor-cron
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: Asia/Kolkata
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data
+    # image CMD runs cron in the foreground (see entrypoint.sh / crontab)

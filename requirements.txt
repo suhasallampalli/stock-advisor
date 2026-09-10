@@ -1,0 +1,25 @@
+# --- API / auth ---
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+SQLAlchemy>=2.0
+pydantic[email]>=2.7
+PyJWT[crypto]>=2.10
+bcrypt>=4.1
+cryptography>=42
+httpx>=0.27
+
+# --- advisor pipeline ---
+anthropic>=0.69
+kiteconnect>=5.0.1
+upstox-python-sdk>=2.15.0
+smartapi-python>=1.5.5
+pyotp>=2.9.0
+yfinance>=0.2.55
+pandas>=2.2
+numpy>=1.26
+PyYAML>=6.0
+python-dotenv>=1.0
+Jinja2>=3.1
+requests>=2.31
+tenacity>=8.2

@@ -1,0 +1,9 @@
+# One NSE trading symbol per line. Lines starting with # are ignored.
+# Copy to watchlist.txt and edit. These are examples, not suggestions.
+RELIANCE
+HDFCBANK
+INFY
+TATAMOTORS
+ITC
+LT
+SUNPHARMA
