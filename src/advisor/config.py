@@ -114,7 +114,13 @@ class Config:
 
     @property
     def watchlist(self) -> list[str]:
-        rel = self.raw.get("watchlist_file", "data/watchlist.txt")
+        return self._symbol_file(self.raw.get("watchlist_file", "data/watchlist.txt"))
+
+    @property
+    def fno_symbols(self) -> list[str]:
+        return self._symbol_file(self.raw.get("fno_list_file", "data/fno_stocks.txt"))
+
+    def _symbol_file(self, rel: str) -> list[str]:
         path = ROOT / rel
         if not path.exists():
             return []
@@ -126,8 +132,20 @@ class Config:
         return syms
 
     @property
+    def indices(self) -> list[dict]:
+        return self.raw.get("market", {}).get("indices", []) or []
+
+    @property
     def max_rows(self) -> int:
         return int(self.raw.get("report", {}).get("max_rows", 40))
+
+    @property
+    def min_gap_pct(self) -> float:
+        return float(self.raw.get("report", {}).get("min_gap_pct", 0.5))
+
+    @property
+    def max_gap_reason_rows(self) -> int:
+        return int(self.raw.get("report", {}).get("max_gap_reason_rows", 15))
 
 
 def load_config(path: str | Path | None = None) -> Config:

@@ -9,6 +9,22 @@ llm:
 market:
   exchange_suffix: ".NS"          # ".NS" = NSE, ".BO" = BSE (yfinance convention)
   lookback_days: 400              # history pulled for indicator calculation
+  # Benchmark indices for the market-open brief (previous day move + today's
+  # gap). Tickers are yfinance/Yahoo Finance symbols — an index that fails to
+  # resolve is skipped (logged), not fatal. Adjust to taste.
+  indices:
+    - name: "NIFTY 50"
+      ticker: "^NSEI"
+    - name: "SENSEX"
+      ticker: "^BSESN"
+    - name: "NIFTY BANK"
+      ticker: "^NSEBANK"
+    - name: "NIFTY IT"
+      ticker: "^CNXIT"
+    - name: "NIFTY MIDCAP 100"
+      ticker: "^CNXMDCP"
+    - name: "NIFTY FIN SERVICE"
+      ticker: "NIFTY_FIN_SERVICE.NS"
   # NSE trading holidays for the current year (YYYY-MM-DD). Sessions are
   # skipped on these dates. Update yearly from the NSE holiday calendar.
   holidays:
@@ -49,7 +65,18 @@ signals:
   gap_alert_pct: 4
 
 watchlist_file: data/watchlist.txt
+# NSE F&O (futures & options) underlying stocks, for the market-open gap-up/
+# gap-down scan. NSE revises this list every quarter — refresh it from
+# nseindia.com's published F&O underlying list when they do.
+fno_list_file: data/fno_stocks.txt
 
 report:
   # Max symbols shown per section in the email.
   max_rows: 40
+  # Minimum |open vs prev close| % to count as a gap mover in the market-open
+  # F&O scan. Smaller moves are noise, not gaps.
+  min_gap_pct: 0.5
+  # Of the gap movers, how many per side (gainers/losers) get an LLM-written
+  # "probable reason" (one batched call covers all of them). The rest still
+  # show in the table with prices/gap % but no reason, to bound LLM cost/time.
+  max_gap_reason_rows: 15

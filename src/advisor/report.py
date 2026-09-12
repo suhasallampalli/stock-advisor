@@ -25,6 +25,71 @@ _HTML = _ENV.from_string("""\
   <h2 style="margin-bottom:2px">{{ title }}</h2>
   <div style="color:#57606a;font-size:13px">{{ r.generated_at }} · recommendations for <b>{{ r.horizon_label }}</b></div>
 
+  {% if r.market_highlights %}
+  <h3 style="margin:18px 0 6px">Previous day highlights</h3>
+  <div style="font-size:14px;line-height:1.55;white-space:pre-wrap">{{ r.market_highlights }}</div>
+  {% endif %}
+
+  {% if r.indices %}
+  <h3 style="margin:18px 0 6px">Indices — previous day move</h3>
+  <table style="border-collapse:collapse;width:100%;font-size:13px">
+    <tr style="text-align:left;border-bottom:1px solid #d0d7de">
+      <th style="padding:6px 4px">Index</th><th>Prev close</th><th>Prev day %</th><th>Today's open</th><th>Gap %</th>
+    </tr>
+    {% for i in r.indices %}
+    <tr style="border-bottom:1px solid #eaeef2">
+      <td style="padding:6px 4px"><b>{{ i.name }}</b></td>
+      <td>{{ "{:,.2f}".format(i.prev_close) }}</td>
+      <td style="color:{{ '#1a7f37' if i.prev_change_pct >= 0 else '#b00020' }}">{{ "%+.2f"|format(i.prev_change_pct) }}%</td>
+      <td>{{ "{:,.2f}".format(i.today_open) if i.today_open else "—" }}</td>
+      <td style="color:{{ '#1a7f37' if (i.gap_pct or 0) >= 0 else '#b00020' }}">{{ ("%+.2f"|format(i.gap_pct) + "%") if i.gap_pct is not none else "—" }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {% if r.index_outlook %}
+  <div style="background:#f6f8fa;border-radius:8px;padding:12px 14px;margin:10px 0;font-size:14px;white-space:pre-wrap">
+    <b>Today's trend read:</b> {{ r.index_outlook }}
+  </div>
+  {% endif %}
+
+  {% if r.gainers %}
+  <h3 style="margin:18px 0 6px">F&amp;O — opened higher than previous close</h3>
+  <table style="border-collapse:collapse;width:100%;font-size:13px">
+    <tr style="text-align:left;border-bottom:1px solid #d0d7de">
+      <th style="padding:6px 4px">Stock</th><th>Prev close</th><th>Open</th><th>Gap %</th><th>Probable reason</th>
+    </tr>
+    {% for g in r.gainers %}
+    <tr style="border-bottom:1px solid #eaeef2;vertical-align:top">
+      <td style="padding:6px 4px"><b>{{ g.symbol }}</b></td>
+      <td>₹{{ "%.2f"|format(g.prev_close) }}</td>
+      <td>₹{{ "%.2f"|format(g.open_price) }}</td>
+      <td style="color:#1a7f37">+{{ "%.2f"|format(g.gap_pct) }}%</td>
+      <td style="color:#424a53">{{ g.reason or "—" }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {% if r.losers %}
+  <h3 style="margin:18px 0 6px">F&amp;O — opened lower than previous close</h3>
+  <table style="border-collapse:collapse;width:100%;font-size:13px">
+    <tr style="text-align:left;border-bottom:1px solid #d0d7de">
+      <th style="padding:6px 4px">Stock</th><th>Prev close</th><th>Open</th><th>Gap %</th><th>Probable reason</th>
+    </tr>
+    {% for g in r.losers %}
+    <tr style="border-bottom:1px solid #eaeef2;vertical-align:top">
+      <td style="padding:6px 4px"><b>{{ g.symbol }}</b></td>
+      <td>₹{{ "%.2f"|format(g.prev_close) }}</td>
+      <td>₹{{ "%.2f"|format(g.open_price) }}</td>
+      <td style="color:#b00020">{{ "%.2f"|format(g.gap_pct) }}%</td>
+      <td style="color:#424a53">{{ g.reason or "—" }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
   <div style="background:#f6f8fa;border-radius:8px;padding:12px 14px;margin:14px 0;font-size:14px">
     <b>Portfolio</b><br>
     Invested ₹{{ "{:,.0f}".format(p.total_invested) }} ·
@@ -89,10 +154,16 @@ _HTML = _ENV.from_string("""\
 """)
 
 
+_TITLES = {
+    "premarket": "Pre-open market brief",
+    "market_open": "Market-open brief",
+    "postmarket": "Post-close market brief",
+}
+
+
 def render_html(r: Report) -> str:
     sig_map = {s.symbol: s for s in r.signals}
-    title = ("Pre-open market brief" if r.session == "premarket"
-             else "Post-close market brief")
+    title = _TITLES.get(r.session, "Market brief")
     return _HTML.render(
         r=r, p=r.portfolio, title=title,
         action_style=lambda a: _ACTION_STYLE.get(a, ("#57606a", a.value)),
@@ -101,10 +172,35 @@ def render_html(r: Report) -> str:
 
 
 def render_text(r: Report) -> str:
+    label = {"premarket": "PRE-OPEN", "market_open": "MARKET-OPEN", "postmarket": "POST-CLOSE"}.get(
+        r.session, r.session.upper()
+    )
     lines = [
-        f"{'PRE-OPEN' if r.session == 'premarket' else 'POST-CLOSE'} BRIEF — {r.generated_at}",
+        f"{label} BRIEF — {r.generated_at}",
         f"Recommendations for: {r.horizon_label}",
         "",
+    ]
+    if r.market_highlights:
+        lines += ["PREVIOUS DAY HIGHLIGHTS", r.market_highlights, ""]
+    if r.indices:
+        lines.append("INDICES — PREVIOUS DAY MOVE")
+        for i in r.indices:
+            gap = f"  today's open {i.today_open:.2f} ({i.gap_pct:+.2f}%)" if i.gap_pct is not None else ""
+            lines.append(f"  {i.name}: {i.prev_close:,.2f}  ({i.prev_change_pct:+.2f}%){gap}")
+        lines.append("")
+    if r.index_outlook:
+        lines += ["TODAY'S TREND READ", r.index_outlook, ""]
+    if r.gainers:
+        lines.append("F&O — OPENED HIGHER")
+        for g in r.gainers:
+            lines.append(f"  {g.symbol}: {g.prev_close:.2f} -> {g.open_price:.2f} (+{g.gap_pct:.2f}%)  {g.reason}")
+        lines.append("")
+    if r.losers:
+        lines.append("F&O — OPENED LOWER")
+        for g in r.losers:
+            lines.append(f"  {g.symbol}: {g.prev_close:.2f} -> {g.open_price:.2f} ({g.gap_pct:.2f}%)  {g.reason}")
+        lines.append("")
+    lines += [
         f"Portfolio: invested Rs{r.portfolio.total_invested:,.0f}  value Rs{r.portfolio.total_value:,.0f}  "
         f"unrealised {r.portfolio.unrealised_pnl_pct:+.1f}%",
         "",

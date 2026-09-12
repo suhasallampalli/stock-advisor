@@ -146,14 +146,42 @@ class PortfolioSummary:
 
 
 @dataclass
+class IndexMove:
+    """One benchmark index: yesterday's move plus today's open, if known."""
+
+    name: str                     # display name, e.g. "NIFTY 50"
+    ticker: str                   # data-source ticker, e.g. "^NSEI"
+    prev_close: float             # yesterday's closing level
+    prev_change_pct: float        # yesterday's close vs the day before (%)
+    today_open: float | None = None
+    gap_pct: float | None = None  # today's open vs yesterday's close (%)
+
+
+@dataclass
+class GapMover:
+    """An F&O stock whose open differed from the previous close."""
+
+    symbol: str
+    prev_close: float
+    open_price: float
+    gap_pct: float                # (open - prev_close) / prev_close * 100
+    reason: str = ""               # probable driver, filled in by the LLM pass
+
+
+@dataclass
 class Report:
-    session: str                  # "premarket" | "postmarket"
+    session: str                  # "premarket" | "postmarket" | "market_open"
     generated_at: str
     horizon_label: str            # "today" | "tomorrow"
     portfolio: PortfolioSummary
     signals: list[SymbolSignal]
     actionable: list[SymbolSignal]
     commentary: str = ""
+    indices: list[IndexMove] = field(default_factory=list)
+    market_highlights: str = ""   # previous day's highlights + analysis (LLM)
+    index_outlook: str = ""       # recommendation for today's trend (LLM)
+    gainers: list[GapMover] = field(default_factory=list)   # opened higher, desc by gap
+    losers: list[GapMover] = field(default_factory=list)    # opened lower, desc by |gap|
     disclaimer: str = (
         "Automated rule-based output plus AI commentary for your personal review. "
         "This is NOT investment advice or a recommendation to transact. Markets are "

@@ -13,9 +13,26 @@ A personal, self-hosted daily briefing for the Indian equity market. It:
    its reasons.
 5. Asks **Claude** (`claude-opus-5`) to write a short analyst note over those
    signals, using web search for recent India-market news.
-6. **Emails** each user an HTML brief twice per trading day via Gmail SMTP:
+6. **Emails** each user an HTML brief **three** times per trading day via Gmail SMTP:
    - **~08:45 IST** (pre-open) → calls for **today**
+   - **~09:25 IST** (market-open) → previous day's highlights, index moves +
+     today's trend read, and an F&O gap-up/gap-down scan (see below)
    - **~15:45 IST** (post-close) → calls for **tomorrow**
+
+### The market-open brief
+
+Runs ~10 minutes after NSE opens (09:15 IST), once opening prints exist. It adds:
+
+- **Previous day highlights** — a short Claude-written recap of how the last
+  session went and why (index moves, sectors, news), with web search.
+- **Indices** — previous day's close/% change for the benchmarks in
+  `market.indices` (config.yaml), plus today's open and gap, with a one-paragraph
+  Claude "today's trend read" over that data.
+- **F&O gap scan** — every symbol in `data/fno_stocks.txt` whose today's open
+  differs from yesterday's close by at least `report.min_gap_pct`, split into
+  gainers (opened higher) and losers (opened lower), each **sorted by
+  descending price differential**. The top `report.max_gap_reason_rows` per
+  side get an LLM-written probable reason (one batched call, not one per stock).
 
 It's **multi-user**: a FastAPI JSON API handles sign-up / login (password **and**
 Google), and each user stores their own broker keys (encrypted at rest). The
@@ -62,6 +79,7 @@ curl -sX PUT localhost:8000/brokers/angelone -H "authorization: Bearer $TOKEN" \
 
 # 3. preview a brief (no email), or POST /me/brief?send_email=true to receive it
 curl -sX POST "localhost:8000/me/brief?session=postmarket" -H "authorization: Bearer $TOKEN"
+# session is one of: premarket | market_open | postmarket
 ```
 
 Once a user has brokers configured, the **scheduler** container emails them
@@ -81,6 +99,7 @@ PYTHONPATH=src uvicorn advisor.api.main:app --reload
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 PYTHONPATH=src python -m advisor --session premarket --dry-run              # shared-config mode
+PYTHONPATH=src python -m advisor --session market_open --dry-run            # indices + F&O gap scan
 PYTHONPATH=src python -m advisor --session premarket --all-users --force    # every API user
 ```
 
@@ -103,7 +122,7 @@ PYTHONPATH=src python -m advisor --session premarket --all-users --force    # ev
 | `GET` | `/auth/google/callback` | Google redirects here; verifies the OIDC ID token, links/creates the user, issues our tokens (302 to `FRONTEND_URL#access_token=…` if set, else JSON) |
 | `GET/PUT/DELETE` | `/brokers[/{broker}]` | manage the caller's encrypted broker credentials |
 | `GET` | `/me/portfolio` | live holdings + P&L across the caller's brokers |
-| `POST` | `/me/brief?session=…&send_email=…` | run the pipeline for the caller now |
+| `POST` | `/me/brief?session=…&send_email=…` | run the pipeline for the caller now (`session`: `premarket` \| `market_open` \| `postmarket`) |
 
 ### Token model
 
@@ -156,8 +175,17 @@ masked values. Rotating `SECRETS_ENC_KEY` invalidates all stored credentials.
 
 Indicator periods, signal thresholds (`concentration_trim_pct`, `hard_stop_pct`,
 `profit_take_pct`, `atr_stop_mult`, `gap_alert_pct`), the `.NS`/`.BO` exchange
-suffix, and the **NSE holiday list** — update that once a year from the NSE
-calendar so sessions are skipped correctly.
+suffix, the **NSE holiday list** — update that once a year from the NSE
+calendar so sessions are skipped correctly — plus the **benchmark index list**
+(`market.indices`) and gap-scan thresholds (`report.min_gap_pct`,
+`report.max_gap_reason_rows`) used by the market-open brief.
+
+### `data/fno_stocks.txt`
+
+One NSE symbol per line — the F&O universe scanned for gap-ups/gap-downs at
+market open. Copy `data/fno_stocks.example.txt` to start; NSE revises the
+official F&O underlying list roughly quarterly, so refresh this file
+periodically from their published list.
 
 ---
 
@@ -229,14 +257,15 @@ src/advisor/
   brokers/      zerodha.py  upstox.py  angelone.py  (+ base, factory)
   portfolio.py  merge accounts, FIFO realised P&L, concentration
   marketdata.py yfinance daily OHLC
+  marketmovers.py index moves + F&O gap-up/gap-down scan
   indicators.py SMA/EMA/RSI/MACD/ATR/support-resistance
   signals.py    rule engine -> SymbolSignal
-  llm.py        Claude commentary (web search enabled)
+  llm.py        Claude commentary + market-open outlook + gap reasons (web search)
   notifier.py   Gmail SMTP
   report.py     HTML + text rendering
   run.py        build_report / deliver / run_session / --all-users
 scripts/        shared-config daily token refresh helpers
-crontab         08:45 & 15:45 IST, Mon–Fri
+crontab         08:45, 09:25 & 15:45 IST, Mon–Fri
 ```
 
 ---
@@ -250,6 +279,12 @@ crontab         08:45 & 15:45 IST, Mon–Fri
 - **yfinance** is an unofficial data source; occasional gaps/misses are logged
   and that symbol is skipped for the day. Swap `marketdata.py` for a broker
   historical-candle API if you need higher reliability.
+- **The market-open gap scan depends on yfinance's intraday-updated daily bar**
+  for today's open. That row can lag the real opening print by several
+  minutes on Yahoo's free feed; a symbol with no fresh row yet is silently
+  skipped that run rather than reported stale. Cross-check the gap list
+  against your broker terminal before acting on it, and swap in a broker
+  quote API in `marketmovers.py` if you need tighter timing.
 - **SQLite is the default DB.** Fine for a handful of users; the `api` and
   `scheduler` containers both write to it via the shared `./data` volume. For
   real multi-user load set `DATABASE_URL` to Postgres.

@@ -1,6 +1,7 @@
 .env
 config.yaml
 data/watchlist.txt
+data/fno_stocks.txt
 data/trades.csv
 data/*_token.json
 data/*.db

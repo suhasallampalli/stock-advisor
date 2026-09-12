@@ -11,5 +11,9 @@ PYTHONPATH=/app/src
 # Pre-open brief — ~30 min before the market opens
 45 8 * * 1-5 cd /app && python -m advisor --session premarket --all-users >> /proc/1/fd/1 2>&1
 
+# Market-open brief — NSE opens 09:15 IST; wait ~10 min for opening prints to
+# settle before scanning today's open vs previous close.
+25 9 * * 1-5 cd /app && python -m advisor --session market_open --all-users >> /proc/1/fd/1 2>&1
+
 # Post-close brief — ~15 min after the market closes
 45 15 * * 1-5 cd /app && python -m advisor --session postmarket --all-users >> /proc/1/fd/1 2>&1

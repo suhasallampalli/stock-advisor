@@ -11,8 +11,9 @@ from zoneinfo import ZoneInfo
 
 from .brokers import build_brokers
 from .config import Config, load_config
-from .llm import build_commentary
+from .llm import build_commentary, build_gap_reasons, build_market_outlook
 from .marketdata import fetch_history
+from .marketmovers import fetch_fno_gaps, fetch_index_moves
 from .models import Report
 from .notifier import send_email
 from .portfolio import build_portfolio
@@ -39,7 +40,7 @@ def build_report(
 ) -> Report:
     """Run the full pipeline and return a Report (no delivery)."""
     now = datetime.now(IST)
-    horizon = "today" if session == "premarket" else "tomorrow"
+    horizon = "today" if session in ("premarket", "market_open") else "tomorrow"
 
     brokers = build_brokers(cfg, creds_override=creds_override)
     if not brokers:
@@ -69,15 +70,39 @@ def build_report(
     )
     if cfg.llm_enabled:
         report.commentary = build_commentary(report, cfg.llm_model, cfg.llm_web_search)
+
+    if session == "market_open":
+        _add_market_open_sections(report, cfg)
     return report
+
+
+def _add_market_open_sections(report: Report, cfg: Config) -> None:
+    """Previous-day index recap + today's F&O gap-up/gap-down scan."""
+    report.indices = fetch_index_moves(cfg.indices)
+
+    gainers, losers = fetch_fno_gaps(cfg.fno_symbols, cfg.exchange_suffix, cfg.min_gap_pct)
+    report.gainers = gainers[: cfg.max_rows]
+    report.losers = losers[: cfg.max_rows]
+
+    if cfg.llm_enabled:
+        report.market_highlights, report.index_outlook = build_market_outlook(
+            report, cfg.llm_model, cfg.llm_web_search
+        )
+        reasoned = report.gainers[: cfg.max_gap_reason_rows] + report.losers[: cfg.max_gap_reason_rows]
+        reasons = build_gap_reasons(reasoned, cfg.llm_model, cfg.llm_web_search)
+        for mover in report.gainers + report.losers:
+            mover.reason = reasons.get(mover.symbol, "")
 
 
 def deliver(report: Report, cfg: Config, *, recipients: list[str] | None = None,
             dry_run: bool = False) -> bool:
     """Render + email a report. Returns True if an email was sent."""
     now = datetime.now(IST)
+    session_label = {
+        "premarket": "Pre-open", "market_open": "Market-open", "postmarket": "Post-close",
+    }.get(report.session, report.session)
     subject = (
-        f"[{'Pre-open' if report.session == 'premarket' else 'Post-close'}] "
+        f"[{session_label}] "
         f"{len(report.actionable)} calls · portfolio "
         f"{report.portfolio.unrealised_pnl_pct:+.1f}% · {now.strftime('%d %b')}"
     )
@@ -113,7 +138,7 @@ def run_session(session: str, *, force: bool = False, dry_run: bool = False,
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="advisor")
-    ap.add_argument("--session", choices=["premarket", "postmarket"], required=True)
+    ap.add_argument("--session", choices=["premarket", "market_open", "postmarket"], required=True)
     ap.add_argument("--force", action="store_true", help="run even on a holiday/weekend")
     ap.add_argument("--dry-run", action="store_true", help="print instead of emailing")
     ap.add_argument("--all-users", action="store_true",

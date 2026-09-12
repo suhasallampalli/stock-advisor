@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 
-from .models import Action, Report, SymbolSignal
+from .models import Action, GapMover, Report, SymbolSignal
 
 log = logging.getLogger(__name__)
 
@@ -120,3 +120,162 @@ def build_commentary(report: Report, model: str, use_web_search: bool) -> str:
         return ""
 
     return "\n\n".join(b.text for b in resp.content if b.type == "text").strip()
+
+
+_MARKET_SYSTEM = """You are a markets analyst writing a short pre-open note for a retail \
+investor in India. You are not a registered adviser and must not phrase anything as a \
+recommendation, tip, or instruction to buy or sell.
+
+Write two parts, clearly separated by a line containing exactly "---":
+
+1. PREVIOUS DAY HIGHLIGHTS: 2-3 short paragraphs on how the previous trading day went — \
+key index moves (use the figures given), the sectors/stocks that drove it, and any major \
+news, results, macro data or global cues behind it. Search the web for the previous day's \
+India market recap if it helps ground this.
+
+2. TODAY'S OUTLOOK: 1 short paragraph reading on likely trend for today given the previous \
+day's action, overnight global cues (US markets, Asian markets, crude, dollar/rupee, \
+SGX/GIFT Nifty if you can find it) and today's index opens (given). Frame it as "what the \
+data suggests", not as a call to act.
+
+Plain prose, no headers other than the "---" separator, no preamble, no sign-off. Under 350 \
+words total.
+"""
+
+
+def build_market_outlook(report: Report, model: str, use_web_search: bool) -> tuple[str, str]:
+    """Returns (previous_day_highlights, todays_outlook). Empty strings if the
+    LLM is unavailable/fails or there's no index data to reason over."""
+    if not report.indices:
+        return "", ""
+    try:
+        import anthropic
+    except ImportError:
+        log.warning("anthropic SDK not installed; skipping market outlook")
+        return "", ""
+
+    payload = {
+        "as_of": report.generated_at,
+        "indices": [
+            {
+                "name": i.name,
+                "prev_close": round(i.prev_close, 2),
+                "prev_day_change_pct": round(i.prev_change_pct, 2),
+                "today_open": round(i.today_open, 2) if i.today_open else None,
+                "today_gap_pct": round(i.gap_pct, 2) if i.gap_pct is not None else None,
+            }
+            for i in report.indices
+        ],
+    }
+    user_msg = (
+        "Here is yesterday's close and today's open for the major Indian indices, as JSON. "
+        "Write the two-part note.\n\n"
+        f"```json\n{json.dumps(payload, default=str, indent=2)}\n```\n"
+    )
+
+    tools = []
+    if use_web_search:
+        tools = [{
+            "type": "web_search_20260209",
+            "name": "web_search",
+            "max_uses": 5,
+            "user_location": {"type": "approximate", "country": "IN"},
+        }]
+
+    client = anthropic.Anthropic()
+    kwargs = dict(
+        model=model, max_tokens=2000, thinking={"type": "adaptive"},
+        system=_MARKET_SYSTEM, messages=[{"role": "user", "content": user_msg}],
+    )
+    if tools:
+        kwargs["tools"] = tools
+    try:
+        resp = client.messages.create(**kwargs)
+    except anthropic.APIStatusError as e:
+        log.error("market outlook API error %s: %s", e.status_code, e.message)
+        return "", ""
+    except Exception as e:  # noqa: BLE001
+        log.error("market outlook failed: %s", e)
+        return "", ""
+
+    if resp.stop_reason == "refusal":
+        log.warning("market outlook refused: %s", getattr(resp, "stop_details", None))
+        return "", ""
+
+    text = "\n\n".join(b.text for b in resp.content if b.type == "text").strip()
+    if "---" in text:
+        highlights, _, outlook = text.partition("---")
+        return highlights.strip(), outlook.strip()
+    return text, ""
+
+
+_GAP_SYSTEM = """You are a markets analyst. You are given a list of NSE F&O stocks that \
+gapped up or down at today's open versus yesterday's close. For each symbol, give the single \
+most likely driver in under 15 words (e.g. "Q2 results beat estimates", "block deal reported", \
+"tracking weak IT sector", "no distinct news — broad market move"). Search the web for very \
+recent (last 1-2 days) India stock news on the biggest movers if it helps; for smaller movers \
+without distinct news, a brief general reason (sector/index-linked, broad market) is fine — \
+do not invent specific news you're not reasonably confident about.
+
+Respond with ONLY a JSON array, no prose, no markdown fences:
+[{"symbol": "...", "reason": "..."}, ...]
+One entry per symbol given, same order not required.
+"""
+
+
+def build_gap_reasons(
+    movers: list[GapMover], model: str, use_web_search: bool,
+) -> dict[str, str]:
+    """One batched call covering all given movers -> {symbol: reason}."""
+    if not movers:
+        return {}
+    try:
+        import anthropic
+    except ImportError:
+        log.warning("anthropic SDK not installed; skipping gap reasons")
+        return {}
+
+    payload = [
+        {"symbol": m.symbol, "gap_pct": round(m.gap_pct, 2),
+         "prev_close": round(m.prev_close, 2), "open": round(m.open_price, 2)}
+        for m in movers
+    ]
+    user_msg = f"```json\n{json.dumps(payload, indent=2)}\n```"
+
+    tools = []
+    if use_web_search:
+        tools = [{
+            "type": "web_search_20260209",
+            "name": "web_search",
+            "max_uses": 8,
+            "user_location": {"type": "approximate", "country": "IN"},
+        }]
+
+    client = anthropic.Anthropic()
+    kwargs = dict(
+        model=model, max_tokens=3000, thinking={"type": "adaptive"},
+        system=_GAP_SYSTEM, messages=[{"role": "user", "content": user_msg}],
+    )
+    if tools:
+        kwargs["tools"] = tools
+    try:
+        resp = client.messages.create(**kwargs)
+    except anthropic.APIStatusError as e:
+        log.error("gap reasons API error %s: %s", e.status_code, e.message)
+        return {}
+    except Exception as e:  # noqa: BLE001
+        log.error("gap reasons failed: %s", e)
+        return {}
+
+    if resp.stop_reason == "refusal":
+        log.warning("gap reasons refused: %s", getattr(resp, "stop_details", None))
+        return {}
+
+    text = "\n\n".join(b.text for b in resp.content if b.type == "text").strip()
+    text = text.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    try:
+        items = json.loads(text)
+        return {i["symbol"]: i["reason"] for i in items if i.get("symbol") and i.get("reason")}
+    except (json.JSONDecodeError, TypeError, KeyError) as e:
+        log.warning("gap reasons: could not parse LLM response (%s)", e)
+        return {}

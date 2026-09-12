@@ -44,7 +44,7 @@ def my_portfolio(
 
 @router.post("/brief", response_model=BriefOut)
 def my_brief(
-    session: str = Query(pattern="^(premarket|postmarket)$"),
+    session: str = Query(pattern="^(premarket|market_open|postmarket)$"),
     send_email: bool = Query(default=False, description="also email it (default: preview only)"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
