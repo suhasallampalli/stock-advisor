@@ -10,6 +10,9 @@ data/*.db
 data/*.db-*
 data/*_token.json
 data/watchlist.txt
+data/fno_stocks.txt
 data/trades.csv
 tests
 README.md
+frontend/node_modules
+frontend/dist

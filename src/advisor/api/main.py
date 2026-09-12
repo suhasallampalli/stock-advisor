@@ -7,9 +7,12 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from .db import init_db
 from .routers import auth, brokers, google, portfolio
@@ -18,6 +21,9 @@ from .settings import get_settings
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 for noisy in ("yfinance", "peewee", "urllib3", "httpx", "httpcore"):
     logging.getLogger(noisy).setLevel(logging.WARNING)
+
+log = logging.getLogger("advisor.api")
+_FRONTEND_DIST = Path(__file__).resolve().parents[3] / "frontend" / "dist"
 
 
 @asynccontextmanager
@@ -52,3 +58,15 @@ app.include_router(portfolio.router)
 @app.get("/health", tags=["meta"])
 def health() -> dict:
     return {"status": "ok", "google_login": _settings.google_configured}
+
+
+# --- serve the built React SPA (frontend/dist), if it's been built ---------
+# Registered last so it never shadows the API routes above, /docs, or /openapi.json.
+if _FRONTEND_DIST.is_dir():
+    app.mount("/assets", StaticFiles(directory=_FRONTEND_DIST / "assets"), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa(full_path: str) -> FileResponse:
+        return FileResponse(_FRONTEND_DIST / "index.html")
+else:
+    log.info("frontend/dist not found — serving API only (run `npm run build` in frontend/ to add the UI)")

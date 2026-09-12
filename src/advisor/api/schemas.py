@@ -84,3 +84,4 @@ class BriefOut(BaseModel):
     horizon: str
     emailed: bool
     text: str
+    html: str

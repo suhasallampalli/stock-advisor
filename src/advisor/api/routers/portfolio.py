@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from ...report import render_text
+from ...report import render_html, render_text
 from ..db import get_db
 from ..deps import get_current_user
 from ..models_db import User
@@ -58,4 +58,5 @@ def my_brief(
         horizon=report.horizon_label,
         emailed=emailed,
         text=render_text(report),
+        html=render_html(report),
     )

@@ -36,7 +36,10 @@ Runs ~10 minutes after NSE opens (09:15 IST), once opening prints exist. It adds
 
 It's **multi-user**: a FastAPI JSON API handles sign-up / login (password **and**
 Google), and each user stores their own broker keys (encrypted at rest). The
-scheduler then runs the pipeline once per active user.
+scheduler then runs the pipeline once per active user. A **React dashboard**
+(`frontend/`) sits on top of that same API — register/login, connect brokers,
+view live portfolio, and preview/send briefs from the browser (see "Web UI"
+below).
 
 > ⚠️ **This is not investment advice.** It is a decision-support tool for your own
 > review. Every email says so. Verify everything; consult a SEBI-registered
@@ -92,6 +95,60 @@ python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 PYTHONPATH=src uvicorn advisor.api.main:app --reload
 ```
+
+## Web UI
+
+`frontend/` is a Vite + React + TypeScript dashboard over the same API: register/
+login (password or Google), connect brokers (masked credential forms per
+`BROKER_FIELDS`), a live portfolio view, and a brief viewer/sender (renders the
+same HTML template that gets emailed, in a sandboxed iframe).
+
+**Local development** — run both dev servers side by side:
+
+```bash
+PYTHONPATH=src uvicorn advisor.api.main:app --reload   # backend, :8000
+cd frontend && npm install && npm run dev               # frontend, :5173 (proxies API calls to :8000)
+```
+Open http://localhost:5173.
+
+**Production** — the frontend is built and baked into the same Docker image as
+the API (`Dockerfile`'s first stage runs `npm run build`); `main.py` serves the
+static build and falls back to `index.html` for client-side routes, so the
+whole app is one process on one origin — no separate frontend host, no CORS.
+`docker compose build` / `docker build .` already do this automatically; if you
+run the API directly without building the frontend first, it just serves the
+JSON API alone (`frontend/dist` missing is logged, not an error).
+
+## Deploying to Railway
+
+The app is a single Docker image; `docker-compose.yml`'s two-service split
+(api + scheduler, sharing a bind-mounted `./data`) is for local dev. For a
+hosted deployment, `entrypoint.web.sh` merges both into **one** process (cron
+in the background, uvicorn in the foreground) so **one** Railway service can
+run everything — UI, API, and the three scheduled briefs — backed by SQLite on
+one attached volume. `railway.json` points Railway at this.
+
+1. railway.app → New Project → Deploy from GitHub repo → this repo. It detects
+   `railway.json` / the `Dockerfile` automatically.
+2. **Volume**: attach one, mounted at `/app/data` (holds the SQLite file).
+3. **Variables**: copy every var from your local `.env` into the service's
+   Variables tab (same names — `ANTHROPIC_API_KEY`, `API_SECRET_KEY`,
+   `SECRETS_ENC_KEY`, `DATABASE_URL=sqlite:///./data/advisor.db`, `SMTP_*`,
+   `EMAIL_*`, `GOOGLE_CLIENT_ID`/`SECRET`, etc). Once Railway assigns your
+   domain, set `FRONTEND_URL=https://<app>.up.railway.app/oauth-callback` and
+   `GOOGLE_REDIRECT_URI=https://<app>.up.railway.app/auth/google/callback` —
+   and update that same redirect URI in the Google Cloud Console OAuth client.
+4. **Seed the volume**: it starts empty. `data/watchlist.txt` and
+   `data/fno_stocks.txt` (gitignored, shared across all users, read by every
+   session including `market_open`) won't exist until you create them — via
+   Railway's service shell, or by committing real versions of those two files
+   instead (they hold no secrets). `config.yaml`, if you want to customize it,
+   works the same way — or just leave it out; `load_config()` already falls
+   back to the committed `config.example.yaml` when `config.yaml` is absent.
+5. Cron fires on the container's own `TZ=Asia/Kolkata`, same schedule as
+   local (`crontab`) — no UTC conversion needed.
+6. Confirm `https://<app>.up.railway.app/health` and `/docs` both respond,
+   then run through registration/broker/brief once against the live URL.
 
 ### Run the pipeline once without Docker
 
@@ -264,8 +321,12 @@ src/advisor/
   notifier.py   Gmail SMTP
   report.py     HTML + text rendering
   run.py        build_report / deliver / run_session / --all-users
+frontend/       React (Vite/TS) dashboard — auth, brokers, portfolio, brief viewer
 scripts/        shared-config daily token refresh helpers
 crontab         08:45, 09:25 & 15:45 IST, Mon–Fri
+entrypoint.sh       local docker-compose: cron in the foreground (scheduler service)
+entrypoint.web.sh   hosted single-service deploy: cron in background + uvicorn in foreground
+railway.json        Railway build/deploy config (see "Deploying to Railway")
 ```
 
 ---
